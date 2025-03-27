@@ -639,7 +639,6 @@ export default function PatientTimerDashboard() {
         const notification = new Notification(title, {
           body: body,
           icon: "/favicon.ico",
-          vibrate: [200, 100, 200],
         })
 
         // Adăugăm un handler pentru click pe notificare
