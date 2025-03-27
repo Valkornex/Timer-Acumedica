@@ -689,7 +689,7 @@ export default function PatientTimerDashboard() {
                   icon: "/favicon.ico",
                   badge: "/favicon.ico", // Pentru Android
                   tag: "patient-alert", // Grupăm notificările similare
-                  renotify: true, // Notifică din nou utilizatorul chiar dacă există o notificare cu același tag
+                  // Am eliminat proprietatea renotify: true
                 })
                 .catch((err) => {
                   console.error("Eroare la afișarea notificării prin Service Worker:", err)
