@@ -45,7 +45,6 @@ self.addEventListener("push", (event) => {
         icon: "/favicon.ico",
         badge: "/favicon.ico",
         tag: "patient-alert",
-        renotify: true,
       }),
     )
   }
