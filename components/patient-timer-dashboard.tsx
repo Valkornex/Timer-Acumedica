@@ -17,6 +17,7 @@ import {
   subscribeToAlerts,
   isSupabaseConfigured,
 } from "@/lib/supabase"
+import NotificationPermission from "./notification-permission"
 
 type AlertType = "needles" | "pulse" | "session"
 
@@ -63,6 +64,24 @@ export default function PatientTimerDashboard() {
     if (typeof window !== "undefined") {
       setIsClientReady(true)
       lastTickTimeRef.current = Date.now()
+
+      // Adăugăm un detector de interacțiune pentru iOS
+      const markUserInteraction = () => {
+        document.documentElement.classList.add("user-interacted")
+      }
+
+      // Adăugăm evenimentele de interacțiune
+      const events = ["click", "touchstart", "keydown"]
+      events.forEach((event) => {
+        document.addEventListener(event, markUserInteraction, { once: true })
+      })
+
+      // Curățăm evenimentele la demontare
+      return () => {
+        events.forEach((event) => {
+          document.removeEventListener(event, markUserInteraction)
+        })
+      }
     }
   }, [])
 
@@ -244,14 +263,13 @@ export default function PatientTimerDashboard() {
 
         // Actualizăm timpul pentru pacienții cu timer activ
         if (!isUpdatingRef.current) {
-          isUpdatingRef.current = true
+          isUpdatingRef.current = false
 
           setPatients((prevPatients) => {
             // Verificăm dacă avem pacienți cu timer activ
             const hasRunningTimers = prevPatients.some((p) => p.timer_running)
 
             if (!hasRunningTimers) {
-              isUpdatingRef.current = false
               return prevPatients
             }
 
@@ -298,7 +316,6 @@ export default function PatientTimerDashboard() {
               return patient
             })
 
-            isUpdatingRef.current = false
             return updatedPatients
           })
         }
@@ -439,14 +456,33 @@ export default function PatientTimerDashboard() {
         </div>
       ),
     })
+
+    // Trimitem notificare nativă
+    sendNotification("Sesiune Finalizată", `${patientName} (${patientBed}) - Sesiunea s-a încheiat`)
   }
 
   const triggerAlert = (alert: Alert) => {
     // Redăm sunetul corespunzător
     playAlertSound(alert.type)
 
-    // Afișăm notificarea
+    // Afișăm notificarea în aplicație
     showAlertNotification(alert)
+
+    // Obținem informațiile pacientului
+    const patient = patients.find((p) => p.id === alert.patient_id)
+    if (!patient) return
+
+    // Trimitem notificare nativă
+    let title = ""
+    const body = `${patient.name} (${patient.bed}) - ${formatTime(patient.time_elapsed)}`
+
+    if (alert.type === "needles") {
+      title = "Alertă: Schimbă Acele"
+    } else if (alert.type === "pulse") {
+      title = "Alertă: Verifică Pulsul"
+    }
+
+    sendNotification(title, body)
   }
 
   const retriggerAlert = (alert: Alert) => {
@@ -455,11 +491,57 @@ export default function PatientTimerDashboard() {
 
     // Afișăm notificarea
     showAlertNotification(alert)
+
+    // Nu trimitem notificări native pentru re-declanșări pentru a evita spam-ul
   }
 
   const playAlertSound = (alertType: AlertType) => {
     if (typeof window === "undefined") return
 
+    try {
+      // Verificăm dacă utilizatorul a interacționat cu pagina (necesar pentru iOS)
+      const hasInteracted = document.documentElement.classList.contains("user-interacted")
+
+      // Folosim Audio API pentru compatibilitate mai bună cu dispozitivele mobile
+      const audioFile = new Audio()
+
+      // Setăm sursa audio în funcție de tipul alertei
+      if (alertType === "needles") {
+        audioFile.src = "/sounds/alert-needles.mp3"
+      } else if (alertType === "pulse") {
+        audioFile.src = "/sounds/alert-pulse.mp3"
+      } else if (alertType === "session") {
+        audioFile.src = "/sounds/alert-session.mp3"
+      }
+
+      // Setăm volumul
+      audioFile.volume = 0.7
+
+      // Încercăm să redăm sunetul
+      const playPromise = audioFile.play()
+
+      // Gestionăm promisiunea pentru a evita erorile pe iOS
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log(`Sunet ${alertType} redat cu succes`)
+          })
+          .catch((err) => {
+            console.error(`Eroare la redarea sunetului ${alertType}:`, err)
+
+            // Dacă nu a funcționat Audio API, încercăm Web Audio API ca fallback
+            fallbackAudioPlay(alertType)
+          })
+      }
+    } catch (e) {
+      console.error("Eroare la redarea sunetului:", e)
+      // Încercăm metoda de rezervă
+      fallbackAudioPlay(alertType)
+    }
+  }
+
+  // Funcție de rezervă folosind Web Audio API
+  const fallbackAudioPlay = (alertType: AlertType) => {
     try {
       // Creăm un context audio nou pentru fiecare sunet
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext
@@ -474,17 +556,17 @@ export default function PatientTimerDashboard() {
 
       // Configurăm sunetul în funcție de tipul alertei
       if (alertType === "needles") {
-        oscillator.type = "sine" // Sunet mai plăcut pentru ace
-        oscillator.frequency.value = 600 // Frecvență medie
-        gainNode.gain.value = 0.2 // Volum redus
+        oscillator.type = "sine"
+        oscillator.frequency.value = 600
+        gainNode.gain.value = 0.3
       } else if (alertType === "pulse") {
-        oscillator.type = "sine" // Sunet mai plăcut pentru puls
-        oscillator.frequency.value = 400 // Frecvență mai joasă
-        gainNode.gain.value = 0.2 // Volum redus
+        oscillator.type = "sine"
+        oscillator.frequency.value = 400
+        gainNode.gain.value = 0.3
       } else if (alertType === "session") {
-        oscillator.type = "sine" // Sunet mai plăcut pentru sesiune
-        oscillator.frequency.value = 800 // Frecvență mai înaltă pentru finalizare
-        gainNode.gain.value = 0.3 // Volum puțin mai mare
+        oscillator.type = "sine"
+        oscillator.frequency.value = 800
+        gainNode.gain.value = 0.4
       }
 
       // Conectăm nodurile audio
@@ -505,7 +587,7 @@ export default function PatientTimerDashboard() {
         gainNode.disconnect()
       }, 500)
     } catch (e) {
-      console.error("Eroare la redarea sunetului:", e)
+      console.error("Eroare la redarea sunetului de rezervă:", e)
     }
   }
 
@@ -545,6 +627,30 @@ export default function PatientTimerDashboard() {
         </div>
       ),
     })
+  }
+
+  const sendNotification = (title: string, body: string) => {
+    if (typeof window === "undefined") return
+
+    // Verificăm dacă notificările sunt suportate și permise
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        // Trimitem notificarea
+        const notification = new Notification(title, {
+          body: body,
+          icon: "/favicon.ico",
+          vibrate: [200, 100, 200],
+        })
+
+        // Adăugăm un handler pentru click pe notificare
+        notification.onclick = () => {
+          window.focus()
+          notification.close()
+        }
+      } catch (error) {
+        console.error("Eroare la trimiterea notificării:", error)
+      }
+    }
   }
 
   // Actualizăm funcția dismissAlert pentru a marca alerta ca respinsă în baza de date
@@ -742,6 +848,8 @@ export default function PatientTimerDashboard() {
           </div>
         </div>
       )}
+
+      <NotificationPermission />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {patients.map((patient) => {
