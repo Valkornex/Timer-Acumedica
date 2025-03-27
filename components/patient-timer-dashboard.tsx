@@ -688,7 +688,6 @@ export default function PatientTimerDashboard() {
                   body: body,
                   icon: "/favicon.ico",
                   badge: "/favicon.ico", // Pentru Android
-                  sound: true, // Încercăm să activăm sunetul (nu funcționează pe toate platformele)
                   tag: "patient-alert", // Grupăm notificările similare
                   renotify: true, // Notifică din nou utilizatorul chiar dacă există o notificare cu același tag
                 })

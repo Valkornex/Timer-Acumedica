@@ -68,7 +68,6 @@ export default function NotificationPermission() {
               body: "Veți primi notificări pentru alerte",
               icon: "/favicon.ico",
               badge: "/favicon.ico",
-              sound: true,
             })
           })
         } else {
