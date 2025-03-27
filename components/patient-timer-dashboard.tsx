@@ -580,13 +580,13 @@ export default function PatientTimerDashboard() {
             ...p,
             name: data.name ?? p.name,
             bed: data.bed ?? p.bed,
-            timer_running: data.timerRunning !== undefined ? data.timerRunning : p.timer_running,
-            time_elapsed: data.timeElapsed !== undefined ? data.timeElapsed : p.time_elapsed,
-            session_duration: data.sessionDuration !== undefined ? data.sessionDuration : p.session_duration,
+            timer_running: data.timer_running !== undefined ? data.timer_running : p.timer_running,
+            time_elapsed: data.time_elapsed !== undefined ? data.time_elapsed : p.time_elapsed,
+            session_duration: data.session_duration !== undefined ? data.session_duration : p.session_duration,
           }
 
           // Dacă pornim timerul, ne asigurăm că nu resetăm timpul scurs
-          if (data.timerRunning === true && p.timer_running === false) {
+          if (data.timer_running === true && p.timer_running === false) {
             console.log("Pornire timer pentru pacientul", id, "cu timpul", updatedPatient.time_elapsed)
 
             // Actualizăm referințele locale
@@ -597,7 +597,7 @@ export default function PatientTimerDashboard() {
             if (typeof window !== "undefined") {
               lastTickTimeRef.current = Date.now()
             }
-          } else if (data.timerRunning === false && p.timer_running === true) {
+          } else if (data.timer_running === false && p.timer_running === true) {
             // Dacă oprim timerul, actualizăm referințele locale
             localTimersRef.current[id] = false
           }
@@ -615,9 +615,9 @@ export default function PatientTimerDashboard() {
     // Adăugăm doar proprietățile care au valori definite
     if (data.name !== undefined) dbData.name = data.name
     if (data.bed !== undefined) dbData.bed = data.bed
-    if (data.timerRunning !== undefined) dbData.timer_running = data.timerRunning
-    if (data.timeElapsed !== undefined) dbData.time_elapsed = data.timeElapsed
-    if (data.sessionDuration !== undefined) dbData.session_duration = data.sessionDuration
+    if (data.timer_running !== undefined) dbData.timer_running = data.timer_running
+    if (data.time_elapsed !== undefined) dbData.time_elapsed = data.time_elapsed
+    if (data.session_duration !== undefined) dbData.session_duration = data.session_duration
 
     // Actualizăm timpul ultimei sincronizări
     lastSyncTimeRef.current = Date.now()
@@ -756,9 +756,9 @@ export default function PatientTimerDashboard() {
             id: patient.id,
             name: patient.name,
             bed: patient.bed,
-            timerRunning: patient.timer_running,
-            timeElapsed: patient.time_elapsed,
-            sessionDuration: patient.session_duration,
+            timer_running: patient.timer_running,
+            time_elapsed: patient.time_elapsed,
+            session_duration: patient.session_duration,
           }
 
           return (

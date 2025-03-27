@@ -28,9 +28,9 @@ type Patient = {
   id: number
   name: string
   bed: string
-  timerRunning: boolean
-  timeElapsed: number
-  sessionDuration: number
+  timer_running: boolean
+  time_elapsed: number
+  session_duration: number
 }
 
 type AlertType = "needles" | "pulse" | "session"
@@ -67,25 +67,25 @@ export default function PatientTimer({
     const minutes = Number.parseInt(sessionInput)
     if (!isNaN(minutes) && minutes > 0) {
       updatePatient(patient.id, {
-        sessionDuration: minutes * 60,
+        session_duration: minutes * 60,
       })
       setSessionInput("")
     }
   }
 
   const startTimer = () => {
-    updatePatient(patient.id, { timerRunning: true })
+    updatePatient(patient.id, { timer_running: true })
   }
 
   const pauseTimer = () => {
-    updatePatient(patient.id, { timerRunning: false })
+    updatePatient(patient.id, { timer_running: false })
   }
 
   const resetTimer = () => {
     updatePatient(patient.id, {
-      timerRunning: false,
-      timeElapsed: 0,
-      sessionDuration: 0,
+      timer_running: false,
+      time_elapsed: 0,
+      session_duration: 0,
     })
     setSessionInput("")
   }
@@ -118,7 +118,7 @@ export default function PatientTimer({
   }
 
   const formatRemainingTime = (triggerAt: number) => {
-    const remaining = triggerAt - patient.timeElapsed
+    const remaining = triggerAt - patient.time_elapsed
     if (remaining <= 0) return "Acum"
 
     const mins = Math.floor(remaining / 60)
@@ -131,11 +131,11 @@ export default function PatientTimer({
     }
   }
 
-  const timeRemaining = patient.sessionDuration > 0 ? Math.max(0, patient.sessionDuration - patient.timeElapsed) : 0
+  const timeRemaining = patient.session_duration > 0 ? Math.max(0, patient.session_duration - patient.time_elapsed) : 0
   const progressPercentage =
-    patient.sessionDuration > 0 ? Math.min(100, (patient.timeElapsed / patient.sessionDuration) * 100) : 0
+    patient.session_duration > 0 ? Math.min(100, (patient.time_elapsed / patient.session_duration) * 100) : 0
 
-  const isSessionComplete = patient.sessionDuration > 0 && patient.timeElapsed >= patient.sessionDuration
+  const isSessionComplete = patient.session_duration > 0 && patient.time_elapsed >= patient.session_duration
 
   return (
     <Card className="w-full border-0 shadow-none bg-transparent">
@@ -189,7 +189,7 @@ export default function PatientTimer({
             <div className="text-center">
               <div className="text-sm font-medium text-gray-500 mb-1">Timp Scurs</div>
               <div className="text-3xl font-mono font-bold tabular-nums text-blue-800">
-                {formatTime(patient.timeElapsed)}
+                {formatTime(patient.time_elapsed)}
               </div>
             </div>
 
@@ -198,13 +198,13 @@ export default function PatientTimer({
               <div
                 className={`text-3xl font-mono font-bold tabular-nums ${isSessionComplete ? "text-green-600" : "text-blue-800"}`}
               >
-                {patient.sessionDuration > 0 ? formatTime(timeRemaining) : "--:--"}
+                {patient.session_duration > 0 ? formatTime(timeRemaining) : "--:--"}
               </div>
             </div>
           </div>
 
           {/* Progress bar */}
-          {patient.sessionDuration > 0 && (
+          {patient.session_duration > 0 && (
             <div className="mt-3">
               <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
                 <div
@@ -225,7 +225,7 @@ export default function PatientTimer({
                 <CheckCircle className="h-4 w-4 mr-2" />
                 Sesiune finalizată
               </span>
-            ) : patient.timerRunning ? (
+            ) : patient.timer_running ? (
               <span className="inline-flex items-center text-green-600">
                 <span className="relative flex h-2 w-2 mr-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -500,7 +500,7 @@ export default function PatientTimer({
         </div>
       </CardContent>
       <CardFooter className="flex justify-between px-0 pt-4">
-        {!patient.timerRunning ? (
+        {!patient.timer_running ? (
           <Button
             onClick={startTimer}
             className="flex-1 mr-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
