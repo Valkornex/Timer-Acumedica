@@ -18,6 +18,8 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase"
 import NotificationPermission from "./notification-permission"
+// Adaugă importul pentru noul component
+import AudioUnlocker from "./audio-unlocker"
 
 type AlertType = "needles" | "pulse" | "session"
 
@@ -65,17 +67,32 @@ export default function PatientTimerDashboard() {
       setIsClientReady(true)
       lastTickTimeRef.current = Date.now()
 
-      // Adăugăm un detector de interacțiune pentru iOS
+      // Funcție pentru a marca interacțiunea utilizatorului și a debloca audio
       const markUserInteraction = () => {
         document.documentElement.classList.add("user-interacted")
 
         // Încercăm să deblocăm audio pe iOS la prima interacțiune
         try {
-          // Redăm un sunet scurt și silențios pentru a debloca Audio API
-          const audio = new Audio()
-          audio.src = "/sounds/alert-session.mp3"
-          audio.volume = 0.01
-          audio.play().catch((e) => console.log("Eroare la deblocarea audio:", e))
+          // Redăm toate sunetele cu volum 0 pentru a le preîncărca și debloca
+          const sounds = ["/sounds/alert-needles.mp3", "/sounds/alert-pulse.mp3", "/sounds/alert-session.mp3"]
+
+          sounds.forEach((soundSrc) => {
+            const audio = new Audio(soundSrc)
+            audio.volume = 0.01
+            const playPromise = audio.play()
+            if (playPromise !== undefined) {
+              playPromise.catch((e) => console.log("Eroare la deblocarea audio:", e))
+              // Oprim sunetul după o scurtă perioadă
+              setTimeout(() => {
+                try {
+                  audio.pause()
+                  audio.currentTime = 0
+                } catch (e) {
+                  console.error("Eroare la oprirea audio:", e)
+                }
+              }, 100)
+            }
+          })
 
           // Deblocăm și Web Audio API
           const AudioContext = window.AudioContext || (window as any).webkitAudioContext
@@ -95,6 +112,11 @@ export default function PatientTimerDashboard() {
       const events = ["click", "touchstart", "keydown", "scroll", "touchend"]
       events.forEach((event) => {
         document.addEventListener(event, markUserInteraction, { once: true })
+      })
+
+      // Încercăm să deblocăm audio și la încărcarea paginii (pentru unele browsere)
+      window.addEventListener("load", () => {
+        setTimeout(markUserInteraction, 1000)
       })
 
       // Curățăm evenimentele la demontare
@@ -267,95 +289,86 @@ export default function PatientTimerDashboard() {
     // Rulăm acest efect doar pe client
     if (typeof window === "undefined") return
 
-    let animationFrameId: number
+    // Inițializăm timpul de referință
+    if (lastTickTimeRef.current === 0) {
+      lastTickTimeRef.current = Date.now()
+    }
 
-    function updateTimers() {
+    // Folosim un interval simplu în loc de requestAnimationFrame pentru mai multă stabilitate
+    const intervalId = setInterval(() => {
       const now = Date.now()
       const deltaTime = now - lastTickTimeRef.current
 
       // Actualizăm doar dacă a trecut cel puțin 1 secundă
       if (deltaTime >= 1000) {
-        // Calculăm câte secunde au trecut
+        // Calculăm câte secunde au trecut (de obicei 1, dar poate fi mai mult dacă dispozitivul a fost inactiv)
         const secondsElapsed = Math.floor(deltaTime / 1000)
-        lastTickTimeRef.current = now - (deltaTime % 1000) // Ajustăm pentru precizie
+
+        // Actualizăm timpul de referință pentru următoarea iterație
+        // Folosim o abordare mai precisă pentru a evita acumularea de erori
+        lastTickTimeRef.current = now - (deltaTime % 1000)
 
         // Incrementăm contorul global
-        setCurrentTime((prev) => prev + secondsElapsed)
+        setCurrentTime((prevTime) => prevTime + secondsElapsed)
 
         // Actualizăm timpul pentru pacienții cu timer activ
-        if (!isUpdatingRef.current) {
-          isUpdatingRef.current = false
+        setPatients((prevPatients) => {
+          // Verificăm dacă avem pacienți cu timer activ
+          const hasRunningTimers = prevPatients.some((p) => p.timer_running)
 
-          setPatients((prevPatients) => {
-            // Verificăm dacă avem pacienți cu timer activ
-            const hasRunningTimers = prevPatients.some((p) => p.timer_running)
+          if (!hasRunningTimers) {
+            return prevPatients
+          }
 
-            if (!hasRunningTimers) {
-              return prevPatients
-            }
+          // Actualizăm pacienții
+          return prevPatients.map((patient) => {
+            if (patient.timer_running) {
+              // Incrementăm timpul scurs
+              const newTimeElapsed = patient.time_elapsed + secondsElapsed
 
-            // Actualizăm pacienții
-            const updatedPatients = prevPatients.map((patient) => {
-              if (patient.timer_running) {
-                // Incrementăm timpul scurs
-                const newTimeElapsed = patient.time_elapsed + secondsElapsed
+              // Actualizăm timpul local
+              localTimesRef.current[patient.id] = newTimeElapsed
 
-                // Actualizăm timpul local
-                localTimesRef.current[patient.id] = newTimeElapsed
+              // Verificăm dacă sesiunea s-a încheiat
+              if (patient.session_duration > 0 && newTimeElapsed >= patient.session_duration) {
+                // Oprim cronometrul dacă sesiunea s-a încheiat
+                handleSessionComplete(patient, newTimeElapsed)
 
-                // Verificăm dacă sesiunea s-a încheiat
-                if (patient.session_duration > 0 && newTimeElapsed >= patient.session_duration) {
-                  // Oprim cronometrul dacă sesiunea s-a încheiat
-                  handleSessionComplete(patient, newTimeElapsed)
+                // Actualizăm starea locală
+                localTimersRef.current[patient.id] = false
 
-                  // Actualizăm starea locală
-                  localTimersRef.current[patient.id] = false
-
-                  return {
-                    ...patient,
-                    timer_running: false,
-                    time_elapsed: newTimeElapsed,
-                  }
-                }
-
-                // Actualizăm timpul în baza de date la fiecare 2 secunde
-                if (Math.floor(newTimeElapsed / 2) > Math.floor(patient.time_elapsed / 2) && !isOffline) {
-                  updatePatientInDb(patient.id, {
-                    timer_running: true,
-                    time_elapsed: newTimeElapsed,
-                  }).catch((err) => console.error("Eroare la actualizarea timpului:", err))
-                }
-
-                // Returnăm pacientul actualizat
                 return {
                   ...patient,
+                  timer_running: false,
                   time_elapsed: newTimeElapsed,
                 }
               }
 
-              // Returnăm pacientul nemodificat
-              return patient
-            })
+              // Actualizăm timpul în baza de date la fiecare 5 secunde pentru a reduce traficul
+              if (Math.floor(newTimeElapsed / 5) > Math.floor(patient.time_elapsed / 5) && !isOffline) {
+                updatePatientInDb(patient.id, {
+                  timer_running: true,
+                  time_elapsed: newTimeElapsed,
+                }).catch((err) => console.error("Eroare la actualizarea timpului:", err))
+              }
 
-            return updatedPatients
+              // Returnăm pacientul actualizat
+              return {
+                ...patient,
+                time_elapsed: newTimeElapsed,
+              }
+            }
+
+            // Returnăm pacientul nemodificat
+            return patient
           })
-        }
+        })
       }
-
-      // Continuăm bucla de animație
-      animationFrameId = requestAnimationFrame(updateTimers)
-    }
-
-    // Inițiem bucla de animație
-    animationFrameId = requestAnimationFrame(updateTimers)
+    }, 1000) // Verificăm la fiecare secundă pentru precizie
 
     // Curățăm la demontare
     return () => {
-      cancelAnimationFrame(animationFrameId)
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
+      clearInterval(intervalId)
     }
   }, [isOffline])
 
@@ -516,6 +529,7 @@ export default function PatientTimerDashboard() {
     // Nu trimitem notificări native pentru re-declanșări pentru a evita spam-ul
   }
 
+  // Înlocuiește funcția playAlertSound cu această versiune îmbunătățită
   const playAlertSound = (alertType: AlertType) => {
     if (typeof window === "undefined") return
 
@@ -525,15 +539,18 @@ export default function PatientTimerDashboard() {
 
       // Creăm un context audio pentru a debloca audio pe iOS
       const unlockAudio = () => {
-        // Creăm un context audio temporar pentru a debloca audio pe iOS
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext
-        if (AudioContext) {
-          const audioContext = new AudioContext()
-          // Creăm un oscilator scurt și îl oprim imediat
-          const oscillator = audioContext.createOscillator()
-          oscillator.connect(audioContext.destination)
-          oscillator.start(0)
-          oscillator.stop(0.001)
+        try {
+          // Creăm un context audio temporar pentru a debloca audio pe iOS
+          const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+          if (AudioContext) {
+            const audioContext = new AudioContext()
+            const oscillator = audioContext.createOscillator()
+            oscillator.connect(audioContext.destination)
+            oscillator.start(0)
+            oscillator.stop(0.001)
+          }
+        } catch (e) {
+          console.error("Eroare la deblocarea audio:", e)
         }
       }
 
@@ -542,44 +559,68 @@ export default function PatientTimerDashboard() {
         unlockAudio()
       }
 
-      // Folosim Audio API pentru compatibilitate mai bună cu dispozitivele mobile
-      const audioFile = new Audio()
-
-      // Setăm sursa audio în funcție de tipul alertei
+      // Determinăm sursa audio în funcție de tipul alertei
+      let audioSrc = ""
       if (alertType === "needles") {
-        audioFile.src = "/sounds/alert-needles.mp3"
+        audioSrc = "/sounds/alert-needles.mp3"
       } else if (alertType === "pulse") {
-        audioFile.src = "/sounds/alert-pulse.mp3"
+        audioSrc = "/sounds/alert-pulse.mp3"
       } else if (alertType === "session") {
-        audioFile.src = "/sounds/alert-session.mp3"
+        audioSrc = "/sounds/alert-session.mp3"
       }
+
+      // Folosim o abordare mai robustă pentru redarea audio
+      // Preîncărcăm audio pentru a evita întârzierile
+      const audioElement = new Audio(audioSrc)
 
       // Setăm volumul
-      audioFile.volume = 1.0 // Volum maxim pentru dispozitive mobile
+      audioElement.volume = 1.0 // Volum maxim pentru dispozitive mobile
 
-      // Preîncărcăm audio pentru a evita întârzierile
-      audioFile.load()
+      // Preîncărcăm audio
+      audioElement.preload = "auto"
 
-      // Încercăm să redăm sunetul
-      const playPromise = audioFile.play()
-
-      // Gestionăm promisiunea pentru a evita erorile pe iOS
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            console.log(`Sunet ${alertType} redat cu succes`)
-          })
-          .catch((err) => {
-            console.error(`Eroare la redarea sunetului ${alertType}:`, err)
-
-            // Dacă nu a funcționat Audio API, încercăm Web Audio API ca fallback
-            fallbackAudioPlay(alertType)
-          })
+      // Adăugăm un handler pentru erori
+      audioElement.onerror = (e) => {
+        console.error(`Eroare la încărcarea sunetului ${alertType}:`, e)
+        fallbackAudioPlay(alertType)
       }
+
+      // Adăugăm un handler pentru când audio este pregătit
+      audioElement.oncanplaythrough = () => {
+        // Încercăm să redăm sunetul
+        const playPromise = audioElement.play()
+
+        // Gestionăm promisiunea pentru a evita erorile pe iOS
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log(`Sunet ${alertType} redat cu succes`)
+            })
+            .catch((err) => {
+              console.error(`Eroare la redarea sunetului ${alertType}:`, err)
+
+              // Dacă nu a funcționat Audio API, încercăm Web Audio API ca fallback
+              fallbackAudioPlay(alertType)
+
+              // Încercăm și metoda de vibrație pentru dispozitive mobile
+              if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200])
+              }
+            })
+        }
+      }
+
+      // Încărcăm audio
+      audioElement.load()
     } catch (e) {
       console.error("Eroare la redarea sunetului:", e)
       // Încercăm metoda de rezervă
       fallbackAudioPlay(alertType)
+
+      // Încercăm și metoda de vibrație pentru dispozitive mobile
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200])
+      }
     }
   }
 
@@ -928,6 +969,7 @@ export default function PatientTimerDashboard() {
         </div>
       )}
 
+      <AudioUnlocker />
       <NotificationPermission />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">

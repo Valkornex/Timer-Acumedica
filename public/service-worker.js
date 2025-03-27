@@ -1,10 +1,14 @@
 // Service Worker pentru gestionarea notificărilor
 self.addEventListener("install", (event) => {
   console.log("Service Worker instalat")
+  // Forțăm activarea imediată a service worker-ului
+  self.skipWaiting()
 })
 
 self.addEventListener("activate", (event) => {
   console.log("Service Worker activat")
+  // Preluăm controlul imediat asupra tuturor paginilor
+  event.waitUntil(clients.claim())
 })
 
 // Gestionăm evenimentul de notificare
@@ -37,16 +41,36 @@ self.addEventListener("push", (event) => {
   console.log("Push primit", event)
 
   if (event.data) {
-    const data = event.data.json()
+    try {
+      const data = event.data.json()
 
-    event.waitUntil(
-      self.registration.showNotification(data.title, {
-        body: data.body,
-        icon: "/favicon.ico",
-        badge: "/favicon.ico",
-        tag: "patient-alert",
-      }),
-    )
+      event.waitUntil(
+        self.registration.showNotification(data.title, {
+          body: data.body,
+          icon: "/favicon.ico",
+          badge: "/favicon.ico",
+          tag: "patient-alert",
+          vibrate: [200, 100, 200], // Adăugăm vibrație pentru dispozitive mobile
+        }),
+      )
+    } catch (e) {
+      console.error("Eroare la procesarea datelor push:", e)
+
+      // Încercăm să afișăm o notificare simplă în caz de eroare
+      event.waitUntil(
+        self.registration.showNotification("Notificare nouă", {
+          body: "Aveți o alertă nouă",
+          icon: "/favicon.ico",
+          badge: "/favicon.ico",
+        }),
+      )
+    }
   }
+})
+
+// Adăugăm un handler pentru fetch pentru a gestiona cererile offline
+self.addEventListener("fetch", (event) => {
+  // Lăsăm browserul să gestioneze cererile în mod normal
+  // Acest handler este necesar pentru ca service worker-ul să fie considerat valid
 })
 
