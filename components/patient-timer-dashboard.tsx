@@ -68,10 +68,31 @@ export default function PatientTimerDashboard() {
       // Adăugăm un detector de interacțiune pentru iOS
       const markUserInteraction = () => {
         document.documentElement.classList.add("user-interacted")
+
+        // Încercăm să deblocăm audio pe iOS la prima interacțiune
+        try {
+          // Redăm un sunet scurt și silențios pentru a debloca Audio API
+          const audio = new Audio()
+          audio.src = "/sounds/alert-session.mp3"
+          audio.volume = 0.01
+          audio.play().catch((e) => console.log("Eroare la deblocarea audio:", e))
+
+          // Deblocăm și Web Audio API
+          const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+          if (AudioContext) {
+            const audioContext = new AudioContext()
+            const oscillator = audioContext.createOscillator()
+            oscillator.connect(audioContext.destination)
+            oscillator.start(0)
+            oscillator.stop(0.001)
+          }
+        } catch (e) {
+          console.error("Eroare la deblocarea audio:", e)
+        }
       }
 
       // Adăugăm evenimentele de interacțiune
-      const events = ["click", "touchstart", "keydown"]
+      const events = ["click", "touchstart", "keydown", "scroll", "touchend"]
       events.forEach((event) => {
         document.addEventListener(event, markUserInteraction, { once: true })
       })
@@ -502,6 +523,25 @@ export default function PatientTimerDashboard() {
       // Verificăm dacă utilizatorul a interacționat cu pagina (necesar pentru iOS)
       const hasInteracted = document.documentElement.classList.contains("user-interacted")
 
+      // Creăm un context audio pentru a debloca audio pe iOS
+      const unlockAudio = () => {
+        // Creăm un context audio temporar pentru a debloca audio pe iOS
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+        if (AudioContext) {
+          const audioContext = new AudioContext()
+          // Creăm un oscilator scurt și îl oprim imediat
+          const oscillator = audioContext.createOscillator()
+          oscillator.connect(audioContext.destination)
+          oscillator.start(0)
+          oscillator.stop(0.001)
+        }
+      }
+
+      // Încercăm să deblocăm audio pe iOS
+      if (hasInteracted) {
+        unlockAudio()
+      }
+
       // Folosim Audio API pentru compatibilitate mai bună cu dispozitivele mobile
       const audioFile = new Audio()
 
@@ -515,7 +555,10 @@ export default function PatientTimerDashboard() {
       }
 
       // Setăm volumul
-      audioFile.volume = 0.7
+      audioFile.volume = 1.0 // Volum maxim pentru dispozitive mobile
+
+      // Preîncărcăm audio pentru a evita întârzierile
+      audioFile.load()
 
       // Încercăm să redăm sunetul
       const playPromise = audioFile.play()
@@ -635,20 +678,58 @@ export default function PatientTimerDashboard() {
     // Verificăm dacă notificările sunt suportate și permise
     if ("Notification" in window && Notification.permission === "granted") {
       try {
-        // Trimitem notificarea
-        const notification = new Notification(title, {
-          body: body,
-          icon: "/favicon.ico",
-        })
-
-        // Adăugăm un handler pentru click pe notificare
-        notification.onclick = () => {
-          window.focus()
-          notification.close()
+        // Verificăm dacă serviciul de worker este disponibil pentru notificări mai avansate
+        if ("serviceWorker" in navigator && "PushManager" in window) {
+          // Folosim notificări prin Service Worker dacă este posibil
+          navigator.serviceWorker.ready
+            .then((registration) => {
+              registration
+                .showNotification(title, {
+                  body: body,
+                  icon: "/favicon.ico",
+                  badge: "/favicon.ico", // Pentru Android
+                  sound: true, // Încercăm să activăm sunetul (nu funcționează pe toate platformele)
+                  tag: "patient-alert", // Grupăm notificările similare
+                  renotify: true, // Notifică din nou utilizatorul chiar dacă există o notificare cu același tag
+                })
+                .catch((err) => {
+                  console.error("Eroare la afișarea notificării prin Service Worker:", err)
+                  // Fallback la notificări standard
+                  fallbackNotification(title, body)
+                })
+            })
+            .catch((err) => {
+              console.error("Service Worker nu este pregătit:", err)
+              // Fallback la notificări standard
+              fallbackNotification(title, body)
+            })
+        } else {
+          // Fallback la notificări standard
+          fallbackNotification(title, body)
         }
       } catch (error) {
         console.error("Eroare la trimiterea notificării:", error)
+        // Încercăm metoda de rezervă
+        fallbackNotification(title, body)
       }
+    }
+  }
+
+  // Funcție de rezervă pentru notificări
+  const fallbackNotification = (title: string, body: string) => {
+    try {
+      const notification = new Notification(title, {
+        body: body,
+        icon: "/favicon.ico",
+      })
+
+      // Adăugăm un handler pentru click pe notificare
+      notification.onclick = () => {
+        window.focus()
+        notification.close()
+      }
+    } catch (error) {
+      console.error("Eroare la trimiterea notificării de rezervă:", error)
     }
   }
 

@@ -7,12 +7,26 @@ import { Bell } from "lucide-react"
 export default function NotificationPermission() {
   const [permissionState, setPermissionState] = useState<string>("default")
   const [isSupported, setIsSupported] = useState(false)
+  const [serviceWorkerRegistered, setServiceWorkerRegistered] = useState(false)
 
   useEffect(() => {
     // Verificăm dacă notificările sunt suportate
     if (typeof window !== "undefined" && "Notification" in window) {
       setIsSupported(true)
       setPermissionState(Notification.permission)
+
+      // Înregistrăm Service Worker-ul pentru notificări mai bune
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .register("/service-worker.js")
+          .then((registration) => {
+            console.log("Service Worker înregistrat cu succes:", registration)
+            setServiceWorkerRegistered(true)
+          })
+          .catch((error) => {
+            console.error("Eroare la înregistrarea Service Worker:", error)
+          })
+      }
     }
   }, [])
 
@@ -33,11 +47,36 @@ export default function NotificationPermission() {
           playPromise.catch((e) => console.log("Eroare la redarea sunetului de test:", e))
         }
 
+        // Deblocăm Web Audio API pe iOS
+        try {
+          const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+          if (AudioContext) {
+            const audioContext = new AudioContext()
+            const oscillator = audioContext.createOscillator()
+            oscillator.connect(audioContext.destination)
+            oscillator.start(0)
+            oscillator.stop(0.001)
+          }
+        } catch (e) {
+          console.error("Eroare la deblocarea Web Audio API:", e)
+        }
+
         // Trimitem o notificare de test
-        new Notification("Notificări activate", {
-          body: "Veți primi notificări pentru alerte",
-          icon: "/favicon.ico",
-        })
+        if (serviceWorkerRegistered) {
+          navigator.serviceWorker.ready.then((registration) => {
+            registration.showNotification("Notificări activate", {
+              body: "Veți primi notificări pentru alerte",
+              icon: "/favicon.ico",
+              badge: "/favicon.ico",
+              sound: true,
+            })
+          })
+        } else {
+          new Notification("Notificări activate", {
+            body: "Veți primi notificări pentru alerte",
+            icon: "/favicon.ico",
+          })
+        }
       }
     } catch (error) {
       console.error("Eroare la solicitarea permisiunii:", error)
