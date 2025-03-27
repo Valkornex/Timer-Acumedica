@@ -8,6 +8,7 @@ export default function NotificationPermission() {
   const [permissionState, setPermissionState] = useState<string>("default")
   const [isSupported, setIsSupported] = useState(false)
   const [serviceWorkerRegistered, setServiceWorkerRegistered] = useState(false)
+  const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null)
 
   useEffect(() => {
     // Verificăm dacă notificările sunt suportate
@@ -18,10 +19,21 @@ export default function NotificationPermission() {
       // Înregistrăm Service Worker-ul pentru notificări mai bune
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker
-          .register("/service-worker.js")
+          .register("/service-worker.js", {
+            scope: "/",
+            updateViaCache: "none",
+          })
           .then((registration) => {
             console.log("Service Worker înregistrat cu succes:", registration)
             setServiceWorkerRegistered(true)
+            setSwRegistration(registration)
+
+            // Trimitem un mesaj periodic pentru a menține service worker-ul activ
+            setInterval(() => {
+              registration.active?.postMessage({
+                type: "KEEP_ALIVE",
+              })
+            }, 20000) // La fiecare 20 de secunde
           })
           .catch((error) => {
             console.error("Eroare la înregistrarea Service Worker:", error)
@@ -62,13 +74,13 @@ export default function NotificationPermission() {
         }
 
         // Trimitem o notificare de test
-        if (serviceWorkerRegistered) {
-          navigator.serviceWorker.ready.then((registration) => {
-            registration.showNotification("Notificări activate", {
-              body: "Veți primi notificări pentru alerte",
-              icon: "/favicon.ico",
-              badge: "/favicon.ico",
-            })
+        if (serviceWorkerRegistered && swRegistration) {
+          swRegistration.showNotification("Notificări activate", {
+            body: "Veți primi notificări pentru alerte chiar și când dispozitivul este în standby",
+            icon: "/favicon.ico",
+            badge: "/favicon.ico",
+            requireInteraction: true,
+            vibrate: [200, 100, 200],
           })
         } else {
           new Notification("Notificări activate", {
@@ -97,7 +109,9 @@ export default function NotificationPermission() {
     <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
       <div className="flex items-center mb-2">
         <Bell className="h-5 w-5 text-blue-600 mr-3" />
-        <p className="text-sm text-blue-700">Activați notificările pentru alerte</p>
+        <p className="text-sm text-blue-700">
+          Activați notificările pentru alerte (inclusiv când dispozitivul este în standby)
+        </p>
       </div>
       <Button onClick={requestPermission} className="w-full bg-blue-600 hover:bg-blue-700">
         Activează notificări

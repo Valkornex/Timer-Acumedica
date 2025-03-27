@@ -51,6 +51,7 @@ self.addEventListener("push", (event) => {
           badge: "/favicon.ico",
           tag: "patient-alert",
           vibrate: [200, 100, 200], // Adăugăm vibrație pentru dispozitive mobile
+          requireInteraction: true, // Notificarea rămâne vizibilă până când utilizatorul interacționează cu ea
         }),
       )
     } catch (e) {
@@ -62,6 +63,7 @@ self.addEventListener("push", (event) => {
           body: "Aveți o alertă nouă",
           icon: "/favicon.ico",
           badge: "/favicon.ico",
+          requireInteraction: true,
         }),
       )
     }
@@ -72,5 +74,12 @@ self.addEventListener("push", (event) => {
 self.addEventListener("fetch", (event) => {
   // Lăsăm browserul să gestioneze cererile în mod normal
   // Acest handler este necesar pentru ca service worker-ul să fie considerat valid
+})
+
+// Adăugăm un handler pentru a menține service worker-ul activ
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "KEEP_ALIVE") {
+    console.log("Keeping service worker alive")
+  }
 })
 

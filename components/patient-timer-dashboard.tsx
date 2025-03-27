@@ -18,7 +18,6 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase"
 import NotificationPermission from "./notification-permission"
-// Adaugă importul pentru noul component
 import AudioUnlocker from "./audio-unlocker"
 
 type AlertType = "needles" | "pulse" | "session"
@@ -46,6 +45,7 @@ export default function PatientTimerDashboard() {
   const localTimersRef = useRef<Record<number, boolean>>({})
   const localTimesRef = useRef<Record<number, number>>({})
   const alertsRef = useRef<Alert[]>([])
+  const timerStartTimeRef = useRef<Record<number, number>>({})
 
   // Referințe pentru canalele de timp real
   const patientsChannelRef = useRef<any>(null)
@@ -152,6 +152,13 @@ export default function PatientTimerDashboard() {
 
           // Inițializăm timpul ultimei sincronizări
           lastSyncTimeRef.current = Date.now()
+
+          // Inițializăm timpii de start pentru pacienții cu timer activ
+          patientsData.forEach((patient) => {
+            if (patient.timer_running) {
+              timerStartTimeRef.current[patient.id] = Date.now() - patient.time_elapsed * 1000
+            }
+          })
 
           // Încercăm să obținem alertele
           try {
@@ -284,87 +291,78 @@ export default function PatientTimerDashboard() {
     }
   }, [toast, isOffline])
 
-  // Implementăm un timer bazat pe requestAnimationFrame pentru precizie mai bună
+  // Implementăm un timer mai precis bazat pe timpul absolut
   useEffect(() => {
     // Rulăm acest efect doar pe client
     if (typeof window === "undefined") return
 
-    // Inițializăm timpul de referință
-    if (lastTickTimeRef.current === 0) {
-      lastTickTimeRef.current = Date.now()
-    }
-
-    // Folosim un interval simplu în loc de requestAnimationFrame pentru mai multă stabilitate
+    // Folosim un interval simplu pentru actualizarea UI-ului
     const intervalId = setInterval(() => {
       const now = Date.now()
-      const deltaTime = now - lastTickTimeRef.current
 
-      // Actualizăm doar dacă a trecut cel puțin 1 secundă
-      if (deltaTime >= 1000) {
-        // Calculăm câte secunde au trecut (de obicei 1, dar poate fi mai mult dacă dispozitivul a fost inactiv)
-        const secondsElapsed = Math.floor(deltaTime / 1000)
+      // Actualizăm timpul global
+      setCurrentTime((prev) => prev + 1)
 
-        // Actualizăm timpul de referință pentru următoarea iterație
-        // Folosim o abordare mai precisă pentru a evita acumularea de erori
-        lastTickTimeRef.current = now - (deltaTime % 1000)
+      // Actualizăm timpul pentru pacienții cu timer activ
+      setPatients((prevPatients) => {
+        // Verificăm dacă avem pacienți cu timer activ
+        const hasRunningTimers = prevPatients.some((p) => p.timer_running)
 
-        // Incrementăm contorul global
-        setCurrentTime((prevTime) => prevTime + secondsElapsed)
+        if (!hasRunningTimers) {
+          return prevPatients
+        }
 
-        // Actualizăm timpul pentru pacienții cu timer activ
-        setPatients((prevPatients) => {
-          // Verificăm dacă avem pacienți cu timer activ
-          const hasRunningTimers = prevPatients.some((p) => p.timer_running)
+        // Actualizăm pacienții
+        return prevPatients.map((patient) => {
+          if (patient.timer_running) {
+            // Dacă nu avem un timp de start pentru acest pacient, îl setăm acum
+            if (!timerStartTimeRef.current[patient.id]) {
+              timerStartTimeRef.current[patient.id] = now - patient.time_elapsed * 1000
+            }
 
-          if (!hasRunningTimers) {
-            return prevPatients
-          }
+            // Calculăm timpul scurs bazat pe timpul absolut
+            const elapsedMs = now - timerStartTimeRef.current[patient.id]
+            const newTimeElapsed = Math.floor(elapsedMs / 1000)
 
-          // Actualizăm pacienții
-          return prevPatients.map((patient) => {
-            if (patient.timer_running) {
-              // Incrementăm timpul scurs
-              const newTimeElapsed = patient.time_elapsed + secondsElapsed
+            // Actualizăm timpul local
+            localTimesRef.current[patient.id] = newTimeElapsed
 
-              // Actualizăm timpul local
-              localTimesRef.current[patient.id] = newTimeElapsed
+            // Verificăm dacă sesiunea s-a încheiat
+            if (patient.session_duration > 0 && newTimeElapsed >= patient.session_duration) {
+              // Oprim cronometrul dacă sesiunea s-a încheiat
+              handleSessionComplete(patient, newTimeElapsed)
 
-              // Verificăm dacă sesiunea s-a încheiat
-              if (patient.session_duration > 0 && newTimeElapsed >= patient.session_duration) {
-                // Oprim cronometrul dacă sesiunea s-a încheiat
-                handleSessionComplete(patient, newTimeElapsed)
+              // Actualizăm starea locală
+              localTimersRef.current[patient.id] = false
+              delete timerStartTimeRef.current[patient.id]
 
-                // Actualizăm starea locală
-                localTimersRef.current[patient.id] = false
-
-                return {
-                  ...patient,
-                  timer_running: false,
-                  time_elapsed: newTimeElapsed,
-                }
-              }
-
-              // Actualizăm timpul în baza de date la fiecare 5 secunde pentru a reduce traficul
-              if (Math.floor(newTimeElapsed / 5) > Math.floor(patient.time_elapsed / 5) && !isOffline) {
-                updatePatientInDb(patient.id, {
-                  timer_running: true,
-                  time_elapsed: newTimeElapsed,
-                }).catch((err) => console.error("Eroare la actualizarea timpului:", err))
-              }
-
-              // Returnăm pacientul actualizat
               return {
                 ...patient,
+                timer_running: false,
                 time_elapsed: newTimeElapsed,
               }
             }
 
-            // Returnăm pacientul nemodificat
-            return patient
-          })
+            // Actualizăm timpul în baza de date la fiecare 5 secunde pentru a reduce traficul
+            if (Math.floor(newTimeElapsed / 5) > Math.floor(patient.time_elapsed / 5) && !isOffline) {
+              updatePatientInDb(patient.id, {
+                timer_running: true,
+                time_elapsed: newTimeElapsed,
+              }).catch((err) => console.error("Eroare la actualizarea timpului:", err))
+            }
+
+            // Returnăm pacientul actualizat
+            return {
+              ...patient,
+              time_elapsed: newTimeElapsed,
+            }
+          }
+
+          // Returnăm pacientul nemodificat
+          return patient
         })
-      }
-    }, 1000) // Verificăm la fiecare secundă pentru precizie
+      })
+    }, 1000)
 
     // Curățăm la demontare
     return () => {
@@ -730,7 +728,9 @@ export default function PatientTimerDashboard() {
                   icon: "/favicon.ico",
                   badge: "/favicon.ico", // Pentru Android
                   tag: "patient-alert", // Grupăm notificările similare
-                  // Am eliminat proprietatea renotify: true
+                  vibrate: [200, 100, 200], // Adăugăm vibrație
+                  requireInteraction: true, // Notificarea rămâne vizibilă până când utilizatorul interacționează cu ea
+                  silent: false, // Permitem sunetul nativ al notificării
                 })
                 .catch((err) => {
                   console.error("Eroare la afișarea notificării prin Service Worker:", err)
@@ -761,6 +761,7 @@ export default function PatientTimerDashboard() {
       const notification = new Notification(title, {
         body: body,
         icon: "/favicon.ico",
+        requireInteraction: true, // Notificarea rămâne vizibilă până când utilizatorul interacționează cu ea
       })
 
       // Adăugăm un handler pentru click pe notificare
@@ -787,7 +788,6 @@ export default function PatientTimerDashboard() {
   }
 
   // Modificăm funcția updatePatient pentru a gestiona mai bine erorile și sincronizarea
-
   const updatePatient = async (id: number, data: Partial<Patient>) => {
     console.log("Actualizare pacient:", id, data)
 
@@ -811,21 +811,24 @@ export default function PatientTimerDashboard() {
             session_duration: data.session_duration !== undefined ? data.session_duration : p.session_duration,
           }
 
-          // Dacă pornim timerul, ne asigurăm că nu resetăm timpul scurs
+          // Dacă pornim timerul, ne asigurăm că setăm timpul de start corect
           if (data.timer_running === true && p.timer_running === false) {
             console.log("Pornire timer pentru pacientul", id, "cu timpul", updatedPatient.time_elapsed)
+
+            // Setăm timpul de start bazat pe timpul curent și timpul scurs
+            timerStartTimeRef.current[id] = Date.now() - updatedPatient.time_elapsed * 1000
 
             // Actualizăm referințele locale
             localTimersRef.current[id] = true
             localTimesRef.current[id] = updatedPatient.time_elapsed
-
-            // Actualizăm timestamp-ul ultimei actualizări pentru a evita resetarea
-            if (typeof window !== "undefined") {
-              lastTickTimeRef.current = Date.now()
-            }
           } else if (data.timer_running === false && p.timer_running === true) {
-            // Dacă oprim timerul, actualizăm referințele locale
+            // Dacă oprim timerul, ștergem timpul de start
+            delete timerStartTimeRef.current[id]
             localTimersRef.current[id] = false
+          }
+          // Dacă resetăm timerul, ștergem timpul de start
+          if (data.time_elapsed === 0 && data.timer_running === false) {
+            delete timerStartTimeRef.current[id]
           }
 
           return updatedPatient
