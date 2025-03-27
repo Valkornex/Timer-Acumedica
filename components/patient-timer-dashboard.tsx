@@ -661,8 +661,8 @@ export default function PatientTimerDashboard() {
     // Încercăm să adăugăm în baza de date doar dacă nu suntem offline
     if (!isOffline) {
       try {
-        // Omitem id și created_at pentru a permite Supabase să le genereze
-        const { id, created_at, ...alertData } = newAlert
+        // Omitem id pentru a permite Supabase să îl genereze
+        const { id, ...alertData } = newAlert
         const serverId = await addAlertToDb(alertData)
 
         if (serverId) {
